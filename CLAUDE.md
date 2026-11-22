@@ -22,3 +22,17 @@ Sentence case. Plain short sentences. No em dashes.
 - Database changes: add the next numbered file in `supabase/migrations/`. It applies on start, or with `npm run migrate`.
 - Checks: `npm run lint`, `npx tsc --noEmit`, and pure libraries with `node src/lib/<name>.test.ts`.
 - `scripts/e2e-sandbox.mjs` runs a throwaway user through every page.
+
+## Agent skills
+
+### Issue tracker
+
+GitHub issues in this repo. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Default five roles, label names equal the role names. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context. See `docs/agents/domain.md`.
