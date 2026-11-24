@@ -4,7 +4,7 @@ import { BudgetEditor, type BudgetCat } from "@/components/BudgetEditor";
 import { EmptyBank } from "@/components/EmptyBank";
 import { budgetContext, median, monthList, suggest, type MonthSpend } from "@/lib/budget";
 import { categories, getUser, isSpend, moneyByMonth, sumOf, today, transactionsSince, typicalMonthly } from "@/lib/data";
-import { monthStart, ymd } from "@/lib/format";
+import { homeCurrency, monthStart, secondCurrency, ymd } from "@/lib/format";
 
 // Budgets: tracked against this month with a pace marker. Suggestions come from the full months of data (up to 3, the
 // ones the typical month uses), the middle value per category, never below this month's spending so far. Income is the typical month every page shows (typicalMonthly).
@@ -18,12 +18,17 @@ export default async function Budgets({ searchParams }: { searchParams: Promise<
   const now = await today();
   const thisMonth = ymd(monthStart(now)).slice(0, 7);
   const lastMonth = ymd(monthStart(now, -1)).slice(0, 7);
-  const [txns, cats, saved, typical] = await Promise.all([
+  // Budgets are in home currency. The summary also shows the second currency (Settings) at today's rate (fx, migration 0015).
+  const two = secondCurrency();
+  const [txns, cats, saved, typical, fx] = await Promise.all([
     moneyByMonth(supabase, ymd(monthStart(now, -Math.max(3, now.getUTCMonth())))), // own rows, totalled in SQL: 3 months, or back to January
     categories(),
     supabase.from("budgets").select("category_id, amount"),
     typicalMonthly(supabase, user!.id, ymd(now)),
+    two ? supabase.rpc("fx", { src: homeCurrency(), dst: two, d: ymd(now) }) : null,
   ]);
+  const rate = fx?.data == null ? null : Number(fx.data);
+  const second = two && rate ? { cur: two, rate } : null;
 
   const threeMonthsAgo = ymd(monthStart(now, -3)).slice(0, 7);
   const past = txns.filter((r) => !r.month.startsWith(thisMonth) && r.month.slice(0, 7) >= threeMonthsAgo);
@@ -65,7 +70,7 @@ export default async function Budgets({ searchParams }: { searchParams: Promise<
 
   return (
     // The key takes in saved changes from elsewhere (the AI's Apply) on refresh.
-    <BudgetEditor key={JSON.stringify(budgets) + (range ? `${from}|${to}` : "")} basis={basis} cats={rows} initial={budgets} year={yearMonths} range={range} today={ymd(now)} income={Math.round(income)} now={now.toISOString()} tableMissing={!!saved.error} aside={
+    <BudgetEditor key={JSON.stringify(budgets) + (range ? `${from}|${to}` : "")} basis={basis} cats={rows} initial={budgets} year={yearMonths} range={range} second={second} today={ymd(now)} income={Math.round(income)} now={now.toISOString()} tableMissing={!!saved.error} aside={
       <AskButton
         q={`Look at my budget, my income and my last 3 months of spending. Which categories should I lower, by how much, and what would that free up each month?${budgetContext(rows.filter((c) => c.id in budgets).map((c) => [c.label, budgets[c.id]]))}`}
         className="card-link w-full p-5 text-left flex items-center gap-4"

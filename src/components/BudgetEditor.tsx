@@ -23,7 +23,8 @@ export type BudgetCat = { id: string; label: string; icon: string; color: string
 // Bars use the app's chart blue, like the rest of the app; only an overspend turns red.
 const TEXT = { ok: "text-muted", near: "text-ink", over: "text-bad" };
 
-export function BudgetEditor({ basis, cats: all, initial, year, range, today, income, now, tableMissing, aside }: { basis: string; cats: BudgetCat[]; initial: Record<string, number>; year: MonthSpend[]; range: BudgetRange | null; today: string; income: number; now: string; tableMissing: boolean; aside?: React.ReactNode }) {
+// second: the second currency (Settings) and today's rate from home currency. The summary shows it under the home amounts.
+export function BudgetEditor({ basis, cats: all, initial, year, range, second, today, income, now, tableMissing, aside }: { basis: string; cats: BudgetCat[]; initial: Record<string, number>; year: MonthSpend[]; range: BudgetRange | null; second?: { cur: string; rate: number } | null; today: string; income: number; now: string; tableMissing: boolean; aside?: React.ReactNode }) {
   const { money0, dateLabel } = useMoney();
   const root = useRef<HTMLDivElement>(null);
   const [budgets, setBudgets] = useState(initial);
@@ -233,6 +234,11 @@ export function BudgetEditor({ basis, cats: all, initial, year, range, today, in
                 <span className={`text-base font-medium tracking-normal ${left >= 0 ? "text-muted" : "text-bad"}`}>{left >= 0 ? (past ? "under" : "left") : "over"}</span>
               </div>
               <div className="text-sm text-muted tabular">{money0(spent)} spent of {money0(total)}</div>
+              {second && (
+                <div className="text-xs text-muted tabular mt-1">
+                  {money0(Math.abs(left) * second.rate, second.cur)} {left >= 0 ? (past ? "under" : "left") : "over"} · {money0(spent * second.rate, second.cur)} spent of {money0(total * second.rate, second.cur)}
+                </div>
+              )}
             </div>
             <div>
               <Bar used={total ? spent / total : 1} pace={past ? undefined : m.pace} tone={t} color="var(--chart)" thick />
