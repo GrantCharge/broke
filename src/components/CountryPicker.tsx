@@ -27,6 +27,21 @@ export function CountryField({ country, currency, onChange }: { country: string;
   );
 }
 
+// Any currency, with the ones you use most (home, second) at the top. Used for a second currency and for
+// manual accounts kept in another currency, like a Thai bank account in baht.
+export function CurrencyField({ label, value, onChange, first = [], none }: { label: string; value: string; onChange: (c: string) => void; first?: string[]; none?: string }) {
+  const options = useMemo(() => {
+    const name = new Intl.DisplayNames(["en"], { type: "currency" });
+    const top = [...new Set(first.filter(Boolean))];
+    const all = Intl.supportedValuesOf("currency").filter((c) => !top.includes(c));
+    return [
+      ...(none ? [{ value: "", label: none }] : []),
+      ...[...top, ...all].map((c) => ({ value: c, label: `${name.of(c)} (${c})` })),
+    ];
+  }, [first, none]);
+  return <Dropdown label={label} value={value} options={options} onChange={onChange} placeholder="Choose a currency" searchable />;
+}
+
 // Saves country and home currency into the money profile (user_metadata.profile), keeping the rest of it.
 async function saveCountry(profile: Profile, country: string, currency: string) {
   const { error } = await updateMeta(createClient(), { data: { profile: { ...profile, country, currency } } });

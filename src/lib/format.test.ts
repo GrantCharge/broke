@@ -43,6 +43,11 @@ assert.equal(de.money0(1234.4).replace(/\s/g, " "), "1.234 €");
 assert.equal(fmtWith(fmtFor({ country: "JP" })).money(1234.6).replace("￥", "¥"), "¥1,235");
 assert.equal(fmtFor({ country: "XX", currency: "AED" }).currency, "AED");
 assert.equal(fmtFor(null).currency, "USD"); // existing users without a country
+// Second currency: kept when it's a real code and not the home one. An AUD home shows baht too.
+assert.equal(fmtFor({ country: "AU", currency2: "thb" }).currency2, "THB");
+assert.equal(fmtFor({ country: "AU", currency2: "AUD" }).currency2, undefined);
+assert.equal(fmtFor({ country: "AU", currency2: "baht" }).currency2, undefined);
+assert.equal(fmtWith(fmtFor({ country: "AU" })).money0(1000, "THB").replace(/\s/g, " "), "THB 1,000");
 assert.equal(monthLabel(new Date("2026-03-01T00:00:00Z"), fmtFor({ country: "FR" })), "mars");
 assert.equal(de.dateLabel("2026-10-01", { day: "numeric", month: "short" }), "1. Okt.");
 assert.equal(dateLabel("2026-10-01", { day: "numeric", month: "short" }), "Oct 1");

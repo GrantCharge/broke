@@ -6,7 +6,7 @@ import { ClearMyData, ClearTestData, RemoveTest } from "@/components/ClearTestDa
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { modelOptions, saveChoice } from "@/components/Assistant";
-import { CountryField } from "@/components/CountryPicker";
+import { CountryField, CurrencyField } from "@/components/CountryPicker";
 import { Dropdown } from "@/components/Dropdown";
 import { Modal } from "@/components/Modal";
 import { ThemeToggle } from "@/components/Nav";
@@ -22,7 +22,7 @@ import { Segmented } from "../../setup/SetupActions";
 
 type Group = "profile" | "banks" | "database" | "ai" | "referrals" | "appearance" | "advanced" | "improve";
 type Mode = "sandbox" | "production";
-type Profile = Record<string, unknown> & { country?: string; currency?: string };
+type Profile = Record<string, unknown> & { country?: string; currency?: string; currency2?: string };
 
 const NAV: { id: Group; label: string; icon: LucideIcon; what: string }[] = [
   { id: "profile", label: "Profile", icon: User, what: "Your account, country and money profile." },
@@ -183,10 +183,10 @@ function Card({ title, what, s, children }: { title: string; what?: string; s?: 
 
 function ProfileCards({ email, profile }: { email: string; profile: Profile }) {
   const router = useRouter();
-  const start = { country: profile.country ?? "US", currency: profile.currency ?? countryOf(profile.country).currency };
+  const start = { country: profile.country ?? "US", currency: profile.currency ?? countryOf(profile.country).currency, currency2: profile.currency2 ?? "" };
   const [c, setC] = useState(start);
   const [msg, setMsg] = useState("");
-  const dirty = c.country !== start.country || c.currency !== start.currency;
+  const dirty = c.country !== start.country || c.currency !== start.currency || c.currency2 !== start.currency2;
   const credit = creditOf(profile);
   async function save() {
     const { error } = await updateMeta(createClient(), { data: { profile: { ...profile, ...c } } });
@@ -203,7 +203,13 @@ function ProfileCards({ email, profile }: { email: string; profile: Profile }) {
       </Card>
       <Card title="Country and currency" what="Sets your currency, which banks you can link and which tax tips apply.">
         <div className="max-w-sm">
-          <CountryField country={c.country} currency={c.currency} onChange={(country, currency) => (setC({ country, currency }), setMsg(""))} />
+          <CountryField country={c.country} currency={c.currency} onChange={(country, currency) => (setC({ ...c, country, currency }), setMsg(""))} />
+        </div>
+        <div className="max-w-sm space-y-1.5">
+          <span className="block text-sm font-medium">Also show totals in</span>
+          <CurrencyField label="Second currency" value={c.currency2 === c.currency ? "" : c.currency2} none="No second currency" first={["THB", "AUD", "USD"]}
+            onChange={(currency2) => (setC({ ...c, currency2 }), setMsg(""))} />
+          <p className="text-sm text-muted">For money in two countries. Each amount converts at that day&apos;s exchange rate.</p>
         </div>
         <div className="flex items-center gap-3">
           <button className="btn-primary" disabled={!dirty} onClick={save}>Save</button>

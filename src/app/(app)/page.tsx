@@ -12,7 +12,7 @@ import { SyncButton } from "@/components/PlaidButtons";
 import { TxnList } from "@/components/TxnList";
 import { WeekCard } from "@/components/WeekCard";
 import { categories, getUser, moneyByMonth, today, TXN_SELECT, withAccountNames, type Txn } from "@/lib/data";
-import { dateLabel, money0, monthStart, ymd } from "@/lib/format";
+import { dateLabel, money0, monthStart, secondCurrency, ymd } from "@/lib/format";
 import { deterministicMoves, ladder } from "@/lib/plan";
 import { myPlanFacts } from "@/lib/plan-facts";
 import { payGuess } from "@/lib/pay";
@@ -68,30 +68,37 @@ export default async function Dashboard() {
   const checks = (fetchChecks(supabase, uid, day) as Promise<Checks>).catch(() => ({ rows: [], total: 0 })); // starts now, beside the queries below
 
   // Own rows only: an account a partner shares is on the Accounts page, not in your totals.
-  const [{ data: recent }, { data: accounts }, { data: noRate }, { data: bills }, rows, cats] = await Promise.all([
+  const two = secondCurrency(); // totals also show in this currency (Settings, migration 0032)
+  const [{ data: recent }, { data: accounts }, { data: noRate }, { data: bills }, rows, cats, spent2] = await Promise.all([
     supabase.from("transactions").select(TXN_SELECT).eq("user_id", uid).order("date", { ascending: false }).order("id").limit(5),
-    supabase.from("accounts").select("type, subtype, current_balance:home_balance, included").eq("user_id", uid),
+    supabase.from("accounts").select("type, subtype, current_balance:home_balance, second:second_balance, included").eq("user_id", uid),
     supabase.rpc("fx_missing"),
     supabase.from("recurring").select("id, merchant_name, logo_url, average_amount:home_average, next_date").eq("user_id", uid).eq("active", true).eq("is_income", false).neq("status", "TOMBSTONED").gte("next_date", day).lte("next_date", soon).order("next_date").limit(4),
     moneyByMonth(supabase, ymd(monthStart(now))),
     categories(),
+    two ? supabase.rpc("money_total", { start_date: ymd(monthStart(now)), cur: two }).single<{ spend: number }>() : null,
   ]);
 
   if (!accounts?.length) return <EmptyBank />;
 
   const txns = withAccountNames((recent ?? []) as unknown as Txn[]);
   type Acct = { type: string; subtype: string | null };
-  const bal = (pred: (a: Acct) => boolean) => {
+  const bal = (pred: (a: Acct) => boolean, col: "current_balance" | "second" = "current_balance") => {
     const list = accounts.filter((a) => a.included && pred(a));
-    return list.length ? list.reduce((s, a) => s + Number(a.current_balance ?? 0), 0) : null;
+    return list.length ? list.reduce((s, a) => s + Number(a[col] ?? 0), 0) : null;
   };
-  const owed = bal((a) => a.type === "credit" || a.type === "loan");
+  // Each tile in home currency, and in the second currency underneath when one is set.
+  const tile = (label: string, href: string, pred: (a: Acct) => boolean, abs = false) => {
+    const fix = (n: number | null) => (n == null ? null : abs ? Math.abs(n) : n);
+    return { label, href, value: fix(bal(pred)), value2: two ? fix(bal(pred, "second")) : null };
+  };
   const tiles = [
-    { label: "In your bank", value: bal((a) => a.type === "depository" && a.subtype !== "savings"), href: "/accounts" },
-    { label: "Savings", value: bal((a) => a.type === "depository" && a.subtype === "savings"), href: "/accounts" },
-    { label: "Investments", value: bal((a) => a.type === "investment"), href: "/accounts" },
-    { label: "You owe", value: owed == null ? null : Math.abs(owed), href: "/debt" },
+    tile("In your bank", "/accounts", (a) => a.type === "depository" && a.subtype !== "savings"),
+    tile("Savings", "/accounts", (a) => a.type === "depository" && a.subtype === "savings"),
+    tile("Investments", "/accounts", (a) => a.type === "investment"),
+    tile("You owe", "/debt", (a) => a.type === "credit" || a.type === "loan", true),
   ].filter((t) => t.value != null);
+  const spentTwo = spent2?.data ? Number(spent2.data.spend) : null;
 
   const pic = moneyPicture(rows, cats, ymd(monthStart(now)).slice(0, 7), null);
   const monthName = dateLabel(day, { month: "long" });
@@ -107,6 +114,7 @@ export default async function Dashboard() {
           <Link key={t.label} href={t.href} className="row-hover p-5 space-y-1">
             <span className="block text-sm text-muted">{t.label}</span>
             <span className="block text-2xl font-semibold tabular tracking-[-0.02em]">{money0(t.value!)}</span>
+            {t.value2 != null && <span className="block text-sm text-muted tabular">{money0(t.value2, two)}</span>}
           </Link>
         ))}
       </section>
@@ -122,7 +130,8 @@ export default async function Dashboard() {
             <span className="text-sm text-muted">Spent in {monthName}</span>
             <Link href="/spending" className="text-sm text-muted hover:text-ink">See all</Link>
           </div>
-          <p className="text-2xl font-semibold tabular tracking-[-0.02em]">{money0(pic.spent)}</p>
+          <p className="text-2xl font-semibold tabular tracking-[-0.02em]">{money0(pic.spent)}
+            {spentTwo != null && <span className="ml-2 text-sm font-normal text-muted tracking-normal">{money0(spentTwo, two)}</span>}</p>
           {pic.spent > 0 ? (
             <>
               <div className="flex h-2 gap-0.5 rounded-full overflow-hidden" aria-hidden>

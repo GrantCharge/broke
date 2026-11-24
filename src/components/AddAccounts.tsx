@@ -19,6 +19,7 @@ import { X } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import { CurrencyField } from "@/components/CountryPicker";
 import { Dropdown } from "@/components/Dropdown";
 import { ImportStatement } from "@/components/ImportStatement";
 import { Modal } from "@/components/Modal";
@@ -29,7 +30,7 @@ import { toast } from "@/components/Toast";
 import type { AddChoices } from "@/lib/providers";
 import { createClient } from "@/utils/supabase/client";
 
-type Acct = { id: string; label: string };
+type Acct = { id: string; label: string; currency?: string | null };
 
 // Overlapping circles. Soft = brand tint, dark = ink with light icons.
 function Cluster({ icons, dark = false }: { icons: Icon[]; dark?: boolean }) {
@@ -138,6 +139,7 @@ const KINDS = [
   { value: "vehicle", label: "Car or other vehicle", type: "other", placeholder: "e.g. 2019 Corolla" },
   { value: "property", label: "Home or property", type: "other", placeholder: "e.g. Our house" },
   { value: "crypto", label: "Crypto", type: "investment", placeholder: "e.g. Bitcoin wallet" },
+  { value: "checking", label: "Bank account you update by hand", type: "depository", placeholder: "e.g. Kasikorn everyday" },
   { value: "cash", label: "Cash", type: "depository", placeholder: "e.g. Cash at home" },
   { value: "other", label: "Something else you own", type: "other", placeholder: "e.g. Watch" },
   { value: "owed", label: "Something you owe", type: "loan", placeholder: "e.g. Car loan" },
@@ -145,9 +147,9 @@ const KINDS = [
 
 function AddAsset() {
   const router = useRouter();
-  const { money, parseAmount } = useMoney();
+  const { money, parseAmount, currency: home, currency2 } = useMoney();
   const [open, setOpen] = useState(false);
-  const [f, setF] = useState({ kind: KINDS[0].value, name: "", value: "" });
+  const [f, setF] = useState({ kind: KINDS[0].value, name: "", value: "", currency: home });
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const kind = KINDS.find((k) => k.value === f.kind)!;
@@ -161,6 +163,8 @@ function AddAsset() {
     setErr("");
     const { error } = await createClient().from("accounts").insert({
       name: f.name.trim(), type: kind.type, subtype: kind.value === "owed" ? "other" : kind.value, current_balance: value, manual: true,
+      // Home stays null so it follows home if that changes (migration 0015). Another currency is kept (0032).
+      ...(f.currency !== home ? { currency: f.currency } : {}),
     });
     setBusy(false);
     if (error) return setErr(/manual/.test(error.message) ? "Manual accounts need a database update. Open Setup to run it." : "Couldn't save that account.");
@@ -172,7 +176,7 @@ function AddAsset() {
 
   return (
     <>
-      <Card icons={[MoneyIcon, CarIcon, HouseIcon, CurrencyBtcIcon]} dark title="Add something else" body="Cash, a car, a home, or crypto" onClick={() => setOpen(true)} />
+      <Card icons={[MoneyIcon, CarIcon, HouseIcon, CurrencyBtcIcon]} dark title="Add something else" body="A bank account in any currency, cash, a car, a home, or crypto" onClick={() => setOpen(true)} />
       {open && (
         <Modal label="Add something else" onClose={() => setOpen(false)}>
           <form onSubmit={submit} className="space-y-4">
@@ -190,8 +194,12 @@ function AddAsset() {
             </label>
             <label className="block space-y-1.5">
               <span className="text-sm font-medium">{kind.type === "loan" ? "Amount owed" : "Value"}</span>
-              <input inputMode="decimal" value={f.value} onChange={(e) => setF({ ...f, value: e.target.value })} placeholder={money(0)} className="select tabular" />
+              <input inputMode="decimal" value={f.value} onChange={(e) => setF({ ...f, value: e.target.value })} placeholder={money(0, f.currency)} className="select tabular" />
             </label>
+            <div className="space-y-1.5">
+              <span className="block text-sm font-medium">Currency</span>
+              <CurrencyField label="Currency" value={f.currency} first={[home, currency2 ?? ""]} onChange={(currency) => setF({ ...f, currency })} />
+            </div>
             {err && <p className="text-sm text-bad">{err}</p>}
             <button disabled={busy} className="btn-primary w-full !py-2.5">{busy ? "Saving..." : "Add account"}</button>
           </form>
@@ -201,7 +209,7 @@ function AddAsset() {
   );
 }
 
-export function AddAccounts({ choices, accounts, locale, currency, country }: { choices: AddChoices; accounts: Acct[]; locale: string; currency: string; country: string }) {
+export function AddAccounts({ choices, accounts, locale, country }: { choices: AddChoices; accounts: Acct[]; locale: string; country: string }) {
   // One link at a time, so every button shares one hook and one status card.
   const link = useLinkBank(undefined, { quiet: true });
   return (
@@ -214,7 +222,7 @@ export function AddAccounts({ choices, accounts, locale, currency, country }: { 
         {choices.plaidMissing && <Card icons={[BankIcon, CreditCardIcon, WalletIcon]} title="Link a bank or card" body="Add your free Plaid keys in Setup first. It takes about 2 minutes." onClick={() => window.location.assign("/setup")} />}
         {(choices.bank === "akahu" || choices.alsoAkahu) && <AkahuCard />}
         {choices.investments && <InvestCard link={link} />}
-        <ImportStatement accounts={accounts} locale={locale} currency={currency} trigger={(open) => (
+        <ImportStatement accounts={accounts} locale={locale} trigger={(open) => (
           <Card icons={[FileArrowUpIcon]} dark title="Import a statement" body="A CSV, OFX, QFX, QIF or PDF file from your bank" onClick={open} />
         )} />
         <AddAsset />

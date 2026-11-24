@@ -3,7 +3,9 @@
 import { Upload, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
+import { CurrencyField } from "@/components/CountryPicker";
 import { Dropdown } from "@/components/Dropdown";
+import { useMoney } from "@/components/Money";
 import { Modal } from "@/components/Modal";
 import { toast } from "@/components/Toast";
 import { applyRules, RULE_COLS, type Rule } from "@/lib/rules";
@@ -11,7 +13,7 @@ import { applyMapping, categoryKey, parseStatement, type DateOrder, type Mapping
 import { pdfToTable, type PdfItem } from "@/lib/statement-pdf";
 import { createClient } from "@/utils/supabase/client";
 
-type Acct = { id: string; label: string };
+type Acct = { id: string; label: string; currency?: string | null };
 const NEW = "__new";
 const ORDERS: { value: DateOrder; label: string }[] = [
   { value: "dmy", label: "Day first (31/12/2026)" },
@@ -22,14 +24,16 @@ const ORDERS: { value: DateOrder; label: string }[] = [
 // "Import a bank statement": CSV, OFX or QIF from any bank. Rows are manual, keyed so a second import of the
 // same file adds nothing (transactions.import_key, migration 0016). Goes into a manual account or a new one.
 // trigger: draw your own opener (the Add accounts card) instead of the button.
-export function ImportStatement({ accounts, locale, currency, link = false, trigger }: { accounts: Acct[]; locale: string; currency: string; link?: boolean; trigger?: (open: () => void) => React.ReactNode }) {
+export function ImportStatement({ accounts, locale, link = false, trigger }: { accounts: Acct[]; locale: string; link?: boolean; trigger?: (open: () => void) => React.ReactNode }) {
   const router = useRouter();
+  const { currency: home, currency2 } = useMoney(); // the profile's home currency, which may differ from the country's
   const [open, setOpen] = useState(false);
   const [file, setFile] = useState("");
   const [parsed, setParsed] = useState<Parsed | null>(null);
   const [m, setM] = useState<Mapping | null>(null);
   const [account, setAccount] = useState(accounts[0]?.id ?? NEW);
   const [newName, setNewName] = useState("");
+  const [newCur, setNewCur] = useState(home); // a new account can be in another currency, like a Thai bank in THB
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const [pdfFile, setPdfFile] = useState<File | null>(null); // a locked PDF waiting for its password
@@ -40,7 +44,8 @@ export function ImportStatement({ accounts, locale, currency, link = false, trig
     if (parsed.kind !== "csv") return { rows: parsed.rows, skipped: 0 };
     return m ? applyMapping(parsed.table, m, locale) : { rows: [], skipped: 0 };
   }, [parsed, m, locale]);
-  const fmt = useMemo(() => new Intl.NumberFormat(locale, { style: "currency", currency }), [locale, currency]);
+  const shown = account === NEW ? newCur : accounts.find((a) => a.id === account)?.currency || home;
+  const fmt = useMemo(() => new Intl.NumberFormat(locale, { style: "currency", currency: shown }), [locale, shown]);
 
   function reset() {
     setOpen(false);
@@ -107,8 +112,11 @@ export function ImportStatement({ accounts, locale, currency, link = false, trig
     const supabase = createClient();
     let acct = account;
     if (acct === NEW) {
-      // Currency left empty: a manual account is in the home currency (migration 0015).
-      const { data, error } = await supabase.from("accounts").insert({ name: newName.trim() || "Imported account", type: "depository", subtype: "checking", current_balance: 0, manual: true }).select("id").single();
+      // Home currency stays empty, so it follows home (migration 0015). Any other currency is kept (0032).
+      const { data, error } = await supabase.from("accounts").insert({
+        name: newName.trim() || "Imported account", type: "depository", subtype: "checking", current_balance: 0, manual: true,
+        ...(newCur !== home ? { currency: newCur } : {}),
+      }).select("id").single();
       if (error) return setBusy(false), setErr("Couldn't create the account.");
       acct = data.id;
     }
@@ -232,13 +240,19 @@ export function ImportStatement({ accounts, locale, currency, link = false, trig
                   <div className="space-y-1.5">
                     <span className="block text-sm font-medium">Into account</span>
                     <Dropdown label="Into account" value={account} onChange={setAccount} placeholder="Choose an account"
-                      options={[...accounts.map((a) => ({ value: a.id, label: a.label })), { value: NEW, label: "New account", hint: `In ${currency}` }]} />
+                      options={[...accounts.map((a) => ({ value: a.id, label: a.label })), { value: NEW, label: "New account", hint: `In ${newCur}` }]} />
                   </div>
                   {account === NEW && (
                     <label className="block space-y-1.5">
                       <span className="text-sm font-medium">Account name</span>
                       <input value={newName} onChange={(e) => setNewName(e.target.value)} className="select" />
                     </label>
+                  )}
+                  {account === NEW && (
+                    <div className="space-y-1.5">
+                      <span className="block text-sm font-medium">Currency</span>
+                      <CurrencyField label="Currency" value={newCur} first={[home, currency2 ?? ""]} onChange={setNewCur} />
+                    </div>
                   )}
                 </div>
               </>

@@ -8,7 +8,7 @@ import { TxnRow } from "@/components/TxnRow";
 import { pairTransfers } from "@/lib/transfers";
 import { countryOf } from "@/lib/countries";
 import { accountName, allTags, categories, getUser, today, TXN_SELECT, withAccountNames, type Txn } from "@/lib/data";
-import { money, plural, ymd } from "@/lib/format";
+import { homeCurrency, money, plural, secondCurrency, ymd } from "@/lib/format";
 import { fetchChecks } from "@/lib/unsure";
 
 type Search = { q?: string; category?: string; account?: string; range?: string; from?: string; to?: string; tag?: string; limit?: string };
@@ -43,31 +43,39 @@ export default async function Transactions({ searchParams }: { searchParams: Pro
   if (since) query = query.gte("date", since);
   if (to) query = query.lte("date", to);
 
-  const [{ data, count, error }, cats, { data: accounts, error: acctError }, tags, totals, checks] = await Promise.all([
+  const two = secondCurrency(); // also show totals in this currency (Settings), set by getUser above
+  const filter = { q: q ?? null, cat: category ?? null, acct: account ?? null, tag: tag ?? null, start_date: since ?? null, end_date: to ?? null };
+  const [{ data, count, error }, cats, { data: accounts, error: acctError }, tags, totals, checks, totals2] = await Promise.all([
     query,
     categories(),
-    supabase.from("accounts").select("id, name, custom_name, mask, owner_label, manual").order("name"),
+    supabase.from("accounts").select("id, name, custom_name, mask, owner_label, manual, currency").order("name"),
     allTags(),
     // Out and in over the whole filter, not just the loaded page: own rows, no transfers, no ignored (migration 0014).
-    supabase.rpc("txn_totals", { q: q ?? null, cat: category ?? null, acct: account ?? null, tag: tag ?? null, start_date: since ?? null, end_date: to ?? null }).single<{ money_out: number; money_in: number }>(),
+    supabase.rpc("txn_totals", filter).single<{ money_out: number; money_in: number }>(),
     // "Is this right?" rows at the top, own rows from the last 90 days (lib/unsure.ts).
     fetchChecks(supabase, user!.id, ymd(now)),
+    // The same totals in the second currency, each row at its own day's rate (migration 0032).
+    two ? supabase.rpc("txn_totals", { ...filter, cur: two }).single<{ money_out: number; money_in: number }>() : null,
   ]);
   if (error || acctError || totals.error) throw new Error((error ?? acctError ?? totals.error)!.message);
   const txns = withAccountNames((data ?? []) as unknown as Txn[]);
   const pairs = pairTransfers(txns); // a card payment shows once, on the account it left
   const out = Number(totals.data?.money_out ?? 0);
   const inn = Number(totals.data?.money_in ?? 0);
+  const out2 = totals2?.data ? Number(totals2.data.money_out) : null;
+  const inn2 = totals2?.data ? Number(totals2.data.money_in) : null;
+  // Accounts in another currency say which, so a baht account is easy to pick when adding by hand.
+  const curTag = (c: string | null) => (c && c !== homeCurrency() ? ` (${c})` : "");
   const shared = (accounts ?? []).some((a) => a.owner_label);
-  const own = (accounts ?? []).filter((a) => !a.owner_label).map((a) => ({ id: a.id, label: `${accountName(a)}${a.mask ? ` ··${a.mask}` : ""}` }));
-  const ownManual = (accounts ?? []).filter((a) => !a.owner_label && a.manual).map((a) => ({ id: a.id, label: accountName(a) }));
+  const own = (accounts ?? []).filter((a) => !a.owner_label).map((a) => ({ id: a.id, label: `${accountName(a)}${a.mask ? ` ··${a.mask}` : ""}${curTag(a.currency)}`, currency: a.currency as string | null }));
+  const ownManual = (accounts ?? []).filter((a) => !a.owner_label && a.manual).map((a) => ({ id: a.id, label: `${accountName(a)}${curTag(a.currency)}`, currency: a.currency as string | null }));
   const more = new URLSearchParams(Object.entries({ q: sp.q, category, account, range, from, to, tag, limit: String(limit + PAGE) }).filter(([, v]) => v) as [string, string][]);
 
   if (!count && !q && !category && !account && !range && !from && !to && !tag)
     return (
       <EmptyBank title="No transactions yet" body="Link a bank and every purchase shows up here, cleaned up and categorised.">
         <AddTransaction accounts={own} cats={cats} allTags={tags} />
-        <ImportStatement link accounts={ownManual} locale={country.locale} currency={country.currency} />
+        <ImportStatement link accounts={ownManual} locale={country.locale} />
       </EmptyBank>
     );
 
@@ -84,9 +92,10 @@ export default async function Transactions({ searchParams }: { searchParams: Pro
       <div className="flex flex-wrap justify-between gap-2 px-1 text-sm text-muted">
         <span>{plural(count ?? 0, "transaction")}{count && count > txns.length ? `, showing ${txns.length}` : ""}</span>
         <span className="flex items-center gap-4">
-          {!!txns.length && <span className="tabular" title="Your own accounts, without transfers and hidden transactions">{shared ? "Yours: " : ""}{money(out)} out · <span className="text-good">{money(inn)} in</span></span>}
+          {!!txns.length && <span className="tabular" title="Your own accounts, without transfers and hidden transactions">{shared ? "Yours: " : ""}{money(out)} out · <span className="text-good">{money(inn)} in</span>
+            {out2 != null && inn2 != null && <span className="text-muted"> ({money(out2, two)} out · {money(inn2, two)} in)</span>}</span>}
           <AddTransaction accounts={own} cats={cats} allTags={tags} />
-          <ImportStatement link accounts={ownManual} locale={country.locale} currency={country.currency} />
+          <ImportStatement link accounts={ownManual} locale={country.locale} />
           <Link href="/transactions/rules" className="text-ink underline underline-offset-2 hover:opacity-70">Rules</Link>
         </span>
       </div>
