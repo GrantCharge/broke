@@ -1,15 +1,10 @@
-import { mkdirSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
 import { changeLines, checkinFacts, sameDollars, type CheckinFacts } from "@/lib/checkins";
 import { allRows, today as todayDate, displayName, isSpend, TXN_SELECT, typicalMonthly, type Txn } from "@/lib/data";
-import { runViaHelper } from "@/lib/llm/helper";
-import { runCodex, runGemini, runOpencode } from "@/lib/llm/cli-snapshot";
-import { AGENT_DIR, runClaudeCode } from "@/lib/llm/claude-code";
+import { run } from "@/lib/llm/dispatch";
 import { levelOf, namesFor, pickProvider, unmask } from "@/lib/llm/gate";
 import { deterministicMoves, stepOf, whyLine, type Kind } from "@/lib/plan";
 import { loadPlan, planFacts } from "@/lib/plan-facts";
-import { runOpenAICompat } from "@/lib/llm/openai-compat";
-import { compatRun, providersFor } from "@/lib/llm/providers";
+import { providersFor } from "@/lib/llm/providers";
 import { makeTools } from "@/lib/llm/shared";
 import { month, ph, roundMoney, who } from "@/lib/privacy";
 import { fmtFor, fmtWith, ymd } from "@/lib/format";
@@ -122,17 +117,8 @@ async function generate(supabase: Sb, user: User, replace: string | null) {
       ? { $: (n) => `about $${roundMoney(n).toLocaleString("en-US")}`, name: (k, n) => (k === "sub" ? ph(names, "Subscription", n) : who(names, "Merchant", n)), day: (d) => `in ${month(d)}` }
       : { $: fmt.money, day: (d) => new Date(d + "T00:00:00Z").toLocaleDateString(fmt.locale, { month: "short", day: "numeric", timeZone: "UTC" }) });
     const messages = [{ role: "user" as const, content: `Today is ${today}. This week's facts:\n${lines.map((l) => `- ${l}`).join("\n")}` }];
-    if (provider.helper) await runViaHelper({ userId, provider: provider.id, model: provider.use, system: SYSTEM, tools: makeTools(supabase, undefined, userId), messages, emit });
-    else if (provider.id === "claude") {
-      // No data tools needed: the facts are in the prompt, so the MCP config is empty.
-      const mcpFile = join(AGENT_DIR, "mcp", "none.json");
-      mkdirSync(join(AGENT_DIR, "mcp"), { recursive: true, mode: 0o700 });
-      writeFileSync(mcpFile, '{"mcpServers":{}}');
-      await runClaudeCode({ messages, mcpFile, system: SYSTEM, emit, model: provider.use });
-    } else if (provider.id === "codex") await runCodex({ system: SYSTEM, tools: makeTools(supabase, undefined, userId), messages, emit });
-    else if (provider.id === "gemini") await runGemini({ system: SYSTEM, tools: makeTools(supabase, undefined, userId), messages, emit });
-    else if (provider.id === "opencode") await runOpencode({ system: SYSTEM, tools: makeTools(supabase, undefined, userId), messages, emit, model: provider.use ?? provider.model! });
-    else await runOpenAICompat({ ...(await compatRun(provider, userId)), label: provider.label, system: SYSTEM, messages, tools: [], emit });
+    // No data tools needed: the facts are in the prompt, so the OpenAI-compatible runner gets none.
+    await run({ provider, userId, system: SYSTEM, messages, emit, tools: makeTools(supabase, undefined, userId), compatTools: [] });
     out = out.replace(/^\u001e.*$/gm, "").replace(/—/g, ",").trim();
     // A dollar figure the facts don't have: keep the code wording.
     const newNumber = !sameDollars(out, lines);

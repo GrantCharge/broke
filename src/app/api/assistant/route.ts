@@ -1,12 +1,10 @@
 import { userTz } from "@/lib/data";
 import { todayIn } from "@/lib/format";
 import { mintAgentToken } from "@/lib/llm/agent-auth";
-import { runViaHelper } from "@/lib/llm/helper";
-import { runCodex, runGemini, runOpencode } from "@/lib/llm/cli-snapshot";
-import { mcpConfigFile, runClaudeCode } from "@/lib/llm/claude-code";
+import { mcpConfigFile } from "@/lib/llm/claude-code";
+import { run } from "@/lib/llm/dispatch";
 import { aiMode, chatProvider, levelOf, maskMessages, namesFor, SUMMARY_NOTE, unmaskStream } from "@/lib/llm/gate";
-import { runOpenAICompat } from "@/lib/llm/openai-compat";
-import { compatRun, providersFor, type ProviderId } from "@/lib/llm/providers";
+import { providersFor, type ProviderId } from "@/lib/llm/providers";
 import { makeTools, parseImages, profileText, SYSTEM, type ChatMessage } from "@/lib/llm/shared";
 import { playbook, profileQuestions, topicsOf } from "@/lib/advice";
 import { profileForModel } from "@/lib/privacy";
@@ -81,14 +79,10 @@ export async function POST(request: Request) {
       const swap = names ? unmaskStream(names, write) : null;
       const emit = swap ? swap.push : write;
       try {
-        if (provider.helper) await runViaHelper({ userId: user.id, provider: provider.id, model: provider.use, system: fullSystem, tools, messages: sent, emit, signal });
-        else if (provider.id === "claude") {
-          const mcpFile = mcpConfigFile(user.id, await mintAgentToken(user), baseUrl);
-          await runClaudeCode({ messages: sent, mcpFile, system: fullSystem, emit, signal, model: provider.use });
-        } else if (provider.id === "codex") await runCodex({ system: fullSystem, tools, messages: sent, emit, signal });
-        else if (provider.id === "gemini") await runGemini({ system: fullSystem, tools, messages: sent, emit, signal });
-        else if (provider.id === "opencode") await runOpencode({ system: fullSystem, tools, messages: sent, emit, signal, model: provider.use ?? provider.model! });
-        else await runOpenAICompat({ ...(await compatRun(provider, user.id)), label: provider.label, system: fullSystem, messages: sent, tools, emit, signal });
+        await run({
+          provider, userId: user.id, system: fullSystem, messages: sent, emit, tools, signal,
+          mcpFile: async () => mcpConfigFile(user.id, await mintAgentToken(user), baseUrl),
+        });
       } catch (e) {
         console.error("[broke] assistant:", e);
         emit("\n\nSomething went wrong starting the AI session. Try again in a moment.");

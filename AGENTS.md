@@ -5,6 +5,7 @@ Personal finance app. Next.js 15 (app router), Supabase (sign-in, Postgres, row-
 ## Rules for any change
 
 - **Bank data stays private.** Every AI path goes through `src/lib/llm/gate.ts`. A cloud model gets the summary only: rounded amounts, names replaced by tokens. Full detail goes only to a local model. Never add another path.
+- **Every model call goes through `src/lib/llm/dispatch.ts`.** Do not write a provider ladder in a route.
 - **No AI API keys.** AI runs on the person's own signed-in app (Claude Code, Codex, Gemini CLI, opencode), a local model, or their OpenRouter sign-in.
 - **Tools stay off for prompts from a website.** The helper (`public/broke-connect.cjs`) only runs AI apps with no tools at all. Don't add one that can read files.
 - **Every table has row-level security.** Secrets like `plaid_items.access_token` have no policies, so only the server's secret key reads them.

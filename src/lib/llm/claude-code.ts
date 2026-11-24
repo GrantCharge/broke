@@ -1,6 +1,5 @@
 import "server-only";
 import { spawn, type ChildProcess } from "node:child_process";
-import { randomUUID } from "node:crypto";
 import { chmodSync, mkdirSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -26,18 +25,18 @@ export function mcpConfigFile(userId: string, token: string, baseUrl: string) {
   return file;
 }
 
-export const lockdownArgs = (mcpFile: string, system: { text: string } | { file: string }) => [
+export const lockdownArgs = (mcpFile: string | undefined, system: { text: string } | { file: string }) => [
   "--restricted",
   "--tools", "WebSearch",
-  "--strict-mcp-config", "--mcp-config", mcpFile,
+  // With no config, --strict-mcp-config still loads nothing: it allows only servers from --mcp-config.
+  "--strict-mcp-config", ...(mcpFile ? ["--mcp-config", mcpFile] : []),
   "--allowedTools", "mcp__broke", "WebSearch",
   "--permission-mode", "dontAsk",
   ...("text" in system ? ["--append-system-prompt", system.text] : ["--append-system-prompt-file", system.file]),
 ];
 
 // Temporary chats: --no-session-persistence keeps the CLI from writing a transcript, so each turn replays the
-// short history in the prompt instead of resuming a saved session. Kept for callers that still pass one.
-export const newSessionId = () => randomUUID();
+// short history in the prompt instead of resuming a saved session.
 
 /** SIGTERM the CLI, then SIGKILL if it is still running 3 s later. */
 export function stop(child: ChildProcess) {
@@ -63,9 +62,10 @@ export const transcript = (messages: ChatMessage[]) =>
     ? messages[0].content
     : `Earlier in this chat:\n${messages.slice(0, -1).map((m) => `${m.role === "user" ? "User" : "You"}: ${m.content}`).join("\n")}\n\nNow: ${messages.at(-1)!.content}`;
 
-/** Runs one turn with the whole short history in the prompt. Nothing is saved: no session id comes back. */
-/** model: a Claude Code --model alias from models.ts (opus, sonnet, haiku, fable); omitted = the CLI's default. */
-export async function runClaudeCode(o: { messages: ChatMessage[]; sessionId?: string; resume?: boolean; mcpFile: string; system: string; emit: Emit; signal?: AbortSignal; model?: string }): Promise<null> {
+/** Runs one turn with the whole short history in the prompt. Nothing is saved: no session id comes back.
+ *  mcpFile: broke's MCP config. Omitted, the session gets no MCP server at all (the lockdown still holds).
+ *  model: a Claude Code --model alias from models.ts (opus, sonnet, haiku, fable); omitted = the CLI's default. */
+export async function runClaudeCode(o: { messages: ChatMessage[]; mcpFile?: string; system: string; emit: Emit; signal?: AbortSignal; model?: string }): Promise<null> {
   const bin = findBin("claude");
   if (!bin) {
     o.emit("Claude Code isn't installed on this computer. Open Setup (gear icon) to add it.");
