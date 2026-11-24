@@ -51,7 +51,7 @@ If you make something others would want, send a pull request.
 
 ## Banks
 
-**Banks in other countries (all optional, keys on the Setup page):** Plaid (US, Canada), Akahu (New Zealand), Enable Banking (UK, Europe), Basiq (Australia), Belvo (Brazil). Each shows only for that country. Enable Banking, Basiq and Belvo are built from their public docs and tested against stand-ins, so test against the vendor's sandbox before relying on them. Anywhere else, people import a CSV, OFX, QIF or PDF statement.
+**Banks in other countries (all optional, keys on the Setup page):** Plaid (US, Canada), Akahu (New Zealand), Enable Banking (UK, Europe), Belvo (Brazil). Each shows only for that country. Enable Banking and Belvo are built from their public docs and tested against stand-ins, so test against the vendor's sandbox before relying on them. Anywhere else, people import a CSV, OFX, QIF or PDF statement.
 
 In test mode, press **Use a test bank**, or pick any bank in Plaid Link with username `user_good` and password `pass_good`.
 

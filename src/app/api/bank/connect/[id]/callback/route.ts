@@ -17,7 +17,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
   };
   const { data: { user } } = await (await createClient()).auth.getUser();
   if (!user) return NextResponse.redirect(`${url.origin}/login`);
-  let saved: { state?: string; userId?: string } = {};
+  let saved: { state?: string } = {};
   try {
     saved = JSON.parse((await cookies()).get("bank_connect")?.value ?? "{}");
   } catch {}
@@ -29,9 +29,6 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       if (!code) return back("connect=failed");
       const s = await ebFinish(process.env, code);
       await linkFeed(user.id, id, s.ref, s.institution, JSON.stringify({ ...JSON.parse(s.token), institution: s.institution }));
-    } else if (id === "basiq") {
-      if (!saved.userId) return back("connect=failed");
-      await linkFeed(user.id, id, saved.userId, "Basiq", JSON.stringify({ userId: saved.userId }));
     } else {
       const link = q.get("link");
       if (!link) return back("connect=failed");

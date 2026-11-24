@@ -2,7 +2,7 @@
 // money features apply. The single source the onboarding, formatting, bank linking and Optimize pages read.
 // No "@/" imports so tests run with plain node.
 
-export type Provider = "plaid" | "akahu" | "enablebanking" | "basiq" | "belvo" | "csv";
+export type Provider = "plaid" | "akahu" | "enablebanking" | "belvo" | "csv";
 // Which tax-advantaged account set Optimize shows (src/lib/invest.ts per-country modules).
 export type TaxModule = "us" | "nz" | "au" | "uk" | "ca" | "in" | "ie" | "none";
 
@@ -24,7 +24,7 @@ export const COUNTRIES: Country[] = [
   { code: "GB", name: "United Kingdom", currency: "GBP", locale: "en-GB", providers: ["enablebanking", "plaid", "csv"], tax: "uk", cards: false },
   { code: "IE", name: "Ireland", currency: "EUR", locale: "en-IE", providers: ["enablebanking", "plaid", "csv"], tax: "ie", cards: false },
   { code: "NZ", name: "New Zealand", currency: "NZD", locale: "en-NZ", providers: ["akahu", "csv"], tax: "nz", cards: false },
-  { code: "AU", name: "Australia", currency: "AUD", locale: "en-AU", providers: ["basiq", "csv"], tax: "au", cards: false, regionLabel: "State" },
+  { code: "AU", name: "Australia", currency: "AUD", locale: "en-AU", providers: ["csv"], tax: "au", cards: false, regionLabel: "State" },
   { code: "IN", name: "India", currency: "INR", locale: "en-IN", providers: ["csv"], tax: "in", cards: false, regionLabel: "State" },
   { code: "DE", name: "Germany", currency: "EUR", locale: "de-DE", providers: ["enablebanking", "plaid", "csv"], tax: "none", cards: false },
   { code: "FR", name: "France", currency: "EUR", locale: "fr-FR", providers: ["enablebanking", "plaid", "csv"], tax: "none", cards: false },

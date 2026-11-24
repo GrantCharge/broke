@@ -36,7 +36,7 @@ const NAV: { id: Group; label: string; icon: LucideIcon; what: string }[] = [
 ];
 
 // Which settings page each /setup section belongs on. Sections added later land by what they're about.
-const PLACE: Record<string, Group> = { supabase: "database", database: "database", codes: "database", plaid: "banks", akahu: "banks", enablebanking: "banks", basiq: "banks", belvo: "banks", ai: "ai", referrals: "referrals", local: "advanced", mcp: "advanced", devlogin: "advanced" };
+const PLACE: Record<string, Group> = { supabase: "database", database: "database", codes: "database", plaid: "banks", akahu: "banks", enablebanking: "banks", belvo: "banks", ai: "ai", referrals: "referrals", local: "advanced", mcp: "advanced", devlogin: "advanced" };
 const groupOf = (s: Section): Group => PLACE[s.id] ?? (/bank/i.test(`${s.title} ${s.what}`) ? "banks" : "advanced");
 // Server setup (keys, database, model, testing shortcuts). Only shown on the machine that runs broke.
 const SERVER: Group[] = ["banks", "database", "referrals", "advanced"];

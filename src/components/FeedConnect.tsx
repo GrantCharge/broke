@@ -5,7 +5,6 @@ import { Dropdown } from "@/components/Dropdown";
 
 const TITLE: Record<string, { title: string; body: string }> = {
   enablebanking: { title: "Link your bank", body: "Pick your bank and approve on its own page. broke can only read, it can't move money." },
-  basiq: { title: "Link your bank", body: "Approve on a secure page run by Basiq. broke can only read, it can't move money." },
   belvo: { title: "Conectar seu banco", body: "Open Finance needs your CPF and full name. They go to Belvo for your consent and broke doesn't keep them. broke can only read." },
 };
 
