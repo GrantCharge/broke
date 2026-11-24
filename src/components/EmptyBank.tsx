@@ -29,7 +29,7 @@ export async function EmptyBank({ title = "Link an account to get started", body
         {choices.sandbox && <LinkBankButton sandbox label="Use a test bank (sandbox)" />}
         {choices.sandbox && <TestModeNote />}
         {choices.demo && <DemoBankButton primary={!choices.bank && !choices.feeds.length} />}
-        <ImportStatement accounts={[]} locale={country.locale} currency={country.currency} />
+        <ImportStatement accounts={[]} locale={country.locale} />
         {children ?? (investOnly && <Link href="/transactions" className="text-sm underline underline-offset-2">Add a transaction by hand</Link>)}
         <Link href="/accounts/add" className="text-sm text-muted underline underline-offset-2 hover:text-ink">More ways to add an account</Link>
       </div>

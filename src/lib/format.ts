@@ -3,15 +3,19 @@ import { countryOf } from "./countries.ts";
 // How money and dates print: the user's home currency and their country's locale. Server pages get it per
 // request (setFmtScope in data.ts), client components from useMoney (components/Money.tsx). Default: US dollars.
 // tz: the user's time zone (tz cookie). Only timestamps use it; unset means the runtime's own zone (the browser's on the client).
-export type Fmt = { currency: string; locale: string; tz?: string };
+// currency2: an optional second currency that totals also show in (profile.currency2), never the same as currency.
+export type Fmt = { currency: string; locale: string; tz?: string; currency2?: string };
 export const US_FMT: Fmt = { currency: "USD", locale: "en-US" };
 let scope = () => US_FMT;
 export const setFmtScope = (get: () => Fmt) => void (scope = get);
 export const homeCurrency = () => scope().currency;
+export const secondCurrency = () => scope().currency2;
 // Home currency: the profile's own pick (countries not listed), else the country's.
-export const fmtFor = (p?: { country?: string; currency?: string } | null): Fmt => {
+export const fmtFor = (p?: { country?: string; currency?: string; currency2?: string } | null): Fmt => {
   const c = countryOf(p?.country);
-  return { currency: p?.currency || c.currency, locale: c.locale };
+  const currency = p?.currency || c.currency;
+  const two = /^[A-Za-z]{3}$/.test(p?.currency2 ?? "") ? p!.currency2!.toUpperCase() : undefined;
+  return { currency, locale: c.locale, ...(two && two !== currency ? { currency2: two } : {}) };
 };
 
 const cache = new Map<string, Intl.NumberFormat>();

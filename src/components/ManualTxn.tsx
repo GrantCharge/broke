@@ -12,7 +12,7 @@ import type { Category } from "@/lib/data";
 import { createClient } from "@/utils/supabase/client";
 import { useMoney } from "@/components/Money";
 
-type Acct = { id: string; label: string };
+type Acct = { id: string; label: string; currency?: string | null };
 const NEW_CASH = "__cash";
 const today = () => new Date().toLocaleDateString("en-CA"); // YYYY-MM-DD in local time
 
@@ -79,7 +79,7 @@ export function AddTransaction({ accounts, cats, allTags }: { accounts: Acct[]; 
             <div className="grid grid-cols-2 gap-3">
               <label className="block space-y-1.5">
                 <span className="text-sm font-medium">Amount</span>
-                <input inputMode="decimal" value={f.amount} onChange={(e) => setF({ ...f, amount: e.target.value })} placeholder={money(0)} className="select tabular" />
+                <input inputMode="decimal" value={f.amount} onChange={(e) => setF({ ...f, amount: e.target.value })} placeholder={money(0, accounts.find((a) => a.id === f.account)?.currency)} className="select tabular" />
               </label>
               <label className="block space-y-1.5">
                 <span className="text-sm font-medium">Date</span>
