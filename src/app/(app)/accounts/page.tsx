@@ -8,10 +8,10 @@ import { Merchant } from "@/components/Merchant";
 import { ownedCards } from "@/lib/cards";
 import { ConnectionActions, SyncButton } from "@/components/PlaidButtons";
 import { getUser } from "@/lib/data";
-import { money, money0, plural } from "@/lib/format";
+import { homeCurrency, money, money0, plural, secondCurrency } from "@/lib/format";
 
 type Holding = { id: string; name: string | null; ticker: string | null; type: string | null; quantity: number | null; value: number | null; cost_basis: number | null };
-type Account = { id: string; name: string; official_name?: string | null; custom_name: string | null; mask: string | null; type: string; subtype: string | null; current_balance: number | null; currency: string | null; home: number | null; included: boolean; holdings: Holding[] };
+type Account = { id: string; name: string; official_name?: string | null; custom_name: string | null; mask: string | null; type: string; subtype: string | null; current_balance: number | null; currency: string | null; home: number | null; second?: number | null; included: boolean; holdings: Holding[] };
 type Item = {
   id: string;
   institution_name: string | null;
@@ -56,9 +56,9 @@ export default async function Accounts() {
   const [{ data }, { data: manual }] = await Promise.all([
     supabase
       .from("plaid_items")
-      .select("id, institution_name, institution_logo, institution_color, last_synced_at, status, error, provider, accounts(id, name, official_name, custom_name, mask, type, subtype, current_balance, currency, home:home_balance, included, holdings(id, name, ticker, type, quantity, value, cost_basis))")
+      .select("id, institution_name, institution_logo, institution_color, last_synced_at, status, error, provider, accounts(id, name, official_name, custom_name, mask, type, subtype, current_balance, currency, home:home_balance, second:second_balance, included, holdings(id, name, ticker, type, quantity, value, cost_basis))")
       .order("created_at"),
-    supabase.from("accounts").select("id, name, custom_name, mask, type, subtype, current_balance:balance, currency, home:home_balance, included").eq("manual", true).eq("user_id", user!.id),
+    supabase.from("accounts").select("id, name, custom_name, mask, type, subtype, current_balance:balance, currency, home:home_balance, second:second_balance, included").eq("manual", true).eq("user_id", user!.id),
   ]);
   const items = (data ?? []) as unknown as Item[];
   // How far back each bank's transactions go, so a short history doesn't read as a strange month.
@@ -76,6 +76,15 @@ export default async function Accounts() {
     all.filter((a) => a.included && GROUPS.find((g) => g.type === a.type)?.debt === debt).reduce((s, a) => s + Number(a.home ?? 0), 0);
   const assets = sum(false);
   const debts = sum(true);
+  // The second currency (Settings), at today's rate (second_balance, migration 0032). Null when one
+  // account in the set has no rate, so a total never quietly leaves an account out.
+  const two = secondCurrency();
+  const sum2 = (list: typeof all) => {
+    const inc = list.filter((a) => a.included);
+    return two && inc.every((a) => a.second != null) ? inc.reduce((s, a) => s + Number(a.second), 0) : null;
+  };
+  const assets2 = sum2(all.filter((a) => !GROUPS.find((g) => g.type === a.type)?.debt && GROUPS.some((g) => g.type === a.type)));
+  const debts2 = sum2(all.filter((a) => GROUPS.find((g) => g.type === a.type)?.debt));
 
   return (
     <div className="space-y-6 max-w-4xl">
@@ -87,13 +96,14 @@ export default async function Accounts() {
       {!!all.length && (
         <section className="card grid grid-cols-1 @md:grid-cols-3 divide-y @md:divide-y-0 @md:divide-x divide-line">
           {[
-            ["Assets", assets, ""],
-            ["Debts", debts, "text-bad"],
-            ["Net worth", assets - debts, ""],
-          ].map(([label, v, cls]) => (
+            ["Assets", assets, "", assets2],
+            ["Debts", debts, "text-bad", debts2],
+            ["Net worth", assets - debts, "", assets2 != null && debts2 != null ? assets2 - debts2 : null],
+          ].map(([label, v, cls, v2]) => (
             <div key={label as string} className="px-6 py-4 @md:py-6">
               <div className="section-label">{label}</div>
               <div className={`text-2xl font-semibold tracking-[-0.02em] tabular mt-1 ${cls}`}>{money0(v as number)}</div>
+              {v2 != null && <div className="text-sm text-muted tabular">{money0(v2 as number, two)}</div>}
             </div>
           ))}
         </section>
@@ -103,11 +113,12 @@ export default async function Accounts() {
         const rows = all.filter((a) => a.type === type);
         if (!rows.length) return null;
         const total = rows.filter((a) => a.included).reduce((s, a) => s + Number(a.home ?? 0), 0);
+        const total2 = sum2(rows);
         return (
           <div key={type} className="space-y-3">
             <div className="flex justify-between px-1">
               <span className="section-label">{label}</span>
-              <span className={`text-sm tabular font-medium ${debt ? "text-bad" : ""}`}>{money(total)}</span>
+              <span className={`text-sm tabular font-medium ${debt ? "text-bad" : ""}`}>{money(total)}{total2 != null && <span className="font-normal text-muted"> · {money(total2, two)}</span>}</span>
             </div>
             <section className="card overflow-hidden">
               {rows.map((a) => (
@@ -123,7 +134,11 @@ export default async function Accounts() {
                     <div className="truncate">{a.custom_name || a.name} <span className="text-muted">{a.mask ? `··${a.mask}` : ""}</span></div>
                     <div className="text-xs text-muted">{a.item.institution_name}{a.subtype ? ` · ${subtypeLabel(a.subtype)}` : ""}</div>
                   </div>
-                  <span className="tabular font-medium">{money(a.current_balance, a.currency)}</span>
+                  <div className="text-right">
+                    <span className="block tabular font-medium">{money(a.current_balance, a.currency)}</span>
+                    {/* The second currency under it, unless the account is already in that currency. */}
+                    {two && a.second != null && (a.currency ?? homeCurrency()) !== two && <span className="block text-xs text-muted tabular">{money(a.second, two)}</span>}
+                  </div>
                   <AccountEdit id={a.id} name={a.custom_name || a.name} bankName={a.name} type={a.type} manual={a.item.id === "manual"} />
                   <AccountToggle id={a.id} included={a.included} name={a.custom_name || a.name} />
                 </div>
