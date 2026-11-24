@@ -3,11 +3,10 @@
 // Built from the vendors' public docs on 2026-11-02 and tested against stand-ins, not their live APIs: check field names
 // against one real sandbox response before trusting a new connector.
 //   Enable Banking: https://enablebanking.com/docs/api/reference/
-//   Basiq: https://api.basiq.io/reference/gettransactions.md
 //   Belvo: https://developers.belvo.com/products/aggregation_brazil/aggregation-brazil-integration-widget
 import { createPrivateKey, createSign, randomBytes } from "node:crypto";
 
-export type FeedId = "enablebanking" | "basiq" | "belvo";
+export type FeedId = "enablebanking" | "belvo";
 export type FeedAccount = { plaid_account_id: string; name: string; official_name: string | null; mask: string | null; type: string; subtype: string; current_balance: number | null; available_balance: number | null; credit_limit: number | null; currency: string | null };
 // amount: broke's sign, positive = money out. account_ref: the plaid_account_id it belongs to.
 export type FeedTxn = { plaid_transaction_id: string; account_ref: string; date: string; amount: number; name: string; merchant_name: string | null; logo_url: string | null; pending: boolean; plaid_category: string | null };
@@ -106,49 +105,6 @@ async function ebFeed(env: Env, token: string, since: string, f?: Fetch) {
   return { accounts, txns };
 }
 
-// ---- Basiq (Australia) ----
-const basiqBase = (env: Env) => env.BASIQ_BASE || "https://au-api.basiq.io";
-async function basiqToken(env: Env, body: string, f: Fetch = fetch) {
-  const r = await call<{ access_token: string }>(f, "Basiq", `${basiqBase(env)}/token`, { method: "POST", headers: { Authorization: `Basic ${env.BASIQ_API_KEY}`, "basiq-version": "3.0", "content-type": "application/x-www-form-urlencoded" }, body });
-  return r.access_token;
-}
-const basiq = async <T>(env: Env, path: string, init: RequestInit = {}, f: Fetch = fetch) =>
-  call<T>(f, "Basiq", path.startsWith("http") ? path : `${basiqBase(env)}${path}`, { ...init, headers: { Authorization: `Bearer ${await basiqToken(env, "scope=SERVER_ACCESS", f)}`, "basiq-version": "3.0", "content-type": "application/json", accept: "application/json" } });
-/** A Basiq user for this person (reused when they have one), and the hosted consent page. The return address is set in Basiq's dashboard. */
-export async function basiqStart(env: Env, o: { email: string; state: string; userId?: string | null }, f?: Fetch) {
-  const userId = o.userId || (await basiq<{ id: string }>(env, "/users", { method: "POST", body: JSON.stringify({ email: o.email }) }, f)).id;
-  const client = await basiqToken(env, `scope=CLIENT_ACCESS&userId=${encodeURIComponent(userId)}`, f);
-  const consent = env.BASIQ_CONSENT_URL || "https://consent.basiq.io/home";
-  return { userId, url: `${consent}?${new URLSearchParams({ token: client, state: o.state })}` };
-}
-type BasiqAccount = { id: string; name?: string; displayName?: string; class?: { type?: string; product?: string }; balance?: string | null; availableFunds?: string | null; currency?: string; maskedNumber?: string; accountNo?: string; institution?: string };
-export function basiqAccount(a: BasiqAccount): FeedAccount {
-  const k = (a.class?.type ?? "").toLowerCase();
-  const [type, subtype] = /credit/.test(k) ? ["credit", "credit card"] : /loan|mortgage/.test(k) ? ["loan", k] : /saving|term/.test(k) ? ["depository", "savings"] : /invest/.test(k) ? ["investment", "brokerage"] : /transaction/.test(k) ? ["depository", "checking"] : ["other", k || "other"];
-  return { plaid_account_id: `basiq:${a.id}`, name: a.displayName || a.name || "Account", official_name: a.class?.product ?? null, mask: last4(a.maskedNumber ?? a.accountNo), type, subtype, current_balance: owed(type, num(a.balance)), available_balance: num(a.availableFunds), credit_limit: null, currency: a.currency ?? null };
-}
-export type BasiqTxn = { id: string; account?: string; postDate?: string | null; transactionDate?: string | null; amount?: string | number; description?: string; status?: string; enrich?: { cleanDescription?: string; merchant?: { businessName?: string } | null } | null; class?: string; subClass?: { title?: string } | null };
-/** Basiq: money out is negative. Ours: positive. Posted rows only. */
-export function basiqTxn(t: BasiqTxn): FeedTxn | null {
-  const n = num(t.amount), date = t.postDate ?? t.transactionDate;
-  if (t.status !== "posted" || n == null || !date || !t.account) return null;
-  return { plaid_transaction_id: `basiq:${t.id}`, account_ref: `basiq:${t.account}`, date: date.slice(0, 10), amount: -n, name: t.enrich?.cleanDescription || t.description || "Transaction", merchant_name: t.enrich?.merchant?.businessName ?? null, logo_url: null, pending: false, plaid_category: t.subClass?.title ?? t.class ?? null };
-}
-async function basiqFeed(env: Env, token: string, since: string, f?: Fetch) {
-  const { userId } = JSON.parse(token) as { userId: string };
-  const accts = await basiq<{ data: BasiqAccount[] }>(env, `/users/${userId}/accounts`, {}, f);
-  const txns: FeedTxn[] = [];
-  let next: string | null = `/users/${userId}/transactions?limit=500`;
-  // Newest first, so stop paging once a whole page is older than the window.
-  while (next) {
-    const page: { data: BasiqTxn[]; links?: { next?: string | null } } = await basiq(env, next, {}, f);
-    const rows = page.data.map(basiqTxn).filter((t): t is FeedTxn => !!t);
-    txns.push(...rows.filter((t) => t.date >= since.slice(0, 10)));
-    next = page.data.length && rows.some((t) => t.date >= since.slice(0, 10)) ? page.links?.next ?? null : null;
-  }
-  return { accounts: accts.data.map(basiqAccount), txns };
-}
-
 // ---- Belvo (Brazil, Open Finance) ----
 const belvoBase = (env: Env) => env.BELVO_BASE || (env.BELVO_ENV === "production" ? "https://api.belvo.com" : "https://sandbox.belvo.com");
 const belvo = <T>(env: Env, path: string, init: RequestInit = {}, f: Fetch = fetch) =>
@@ -208,12 +164,11 @@ async function belvoFeed(env: Env, token: string, since: string, f?: Fetch) {
 // ---- Shared ----
 export const FEEDS: Record<FeedId, { label: string; envKeys: string[]; banksStep: boolean }> = {
   enablebanking: { label: "Enable Banking", envKeys: ["ENABLE_BANKING_APP_ID", "ENABLE_BANKING_PRIVATE_KEY"], banksStep: true },
-  basiq: { label: "Basiq", envKeys: ["BASIQ_API_KEY"], banksStep: false },
   belvo: { label: "Belvo", envKeys: ["BELVO_SECRET_ID", "BELVO_SECRET_PASSWORD", "BELVO_TERMS_URL"], banksStep: false },
 };
 export const isFeed = (p?: string | null): p is FeedId => !!p && p in FEEDS;
 export const newState = () => randomBytes(16).toString("base64url");
 
 export function feedData(id: FeedId, env: Env, token: string, since: string, f?: Fetch) {
-  return id === "enablebanking" ? ebFeed(env, token, since, f) : id === "basiq" ? basiqFeed(env, token, since, f) : belvoFeed(env, token, since, f);
+  return id === "enablebanking" ? ebFeed(env, token, since, f) : belvoFeed(env, token, since, f);
 }

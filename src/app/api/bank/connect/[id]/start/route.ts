@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { configured } from "@/lib/providers";
-import { basiqStart, belvoStart, ebBanks, ebStart, isFeed, newState, validCpf } from "@/lib/providers/feeds";
-import { createAdminClient } from "@/utils/supabase/admin";
+import { belvoStart, ebBanks, ebStart, isFeed, newState, validCpf } from "@/lib/providers/feeds";
 import { createClient } from "@/utils/supabase/server";
 
 const COOKIE = "bank_connect";
@@ -30,19 +29,12 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   const body = (await request.json().catch(() => ({}))) as { bank?: string; country?: string; cpf?: string; name?: string };
   const state = newState();
   const callback = `${origin}/api/bank/connect/${id}/callback`;
-  const saved: { state: string; userId?: string } = { state };
+  const saved: { state: string } = { state };
   try {
     let url: string;
     if (id === "enablebanking") {
       if (!body.bank || !/^[A-Z]{2}$/.test(body.country ?? "")) return NextResponse.json({ error: "Pick your bank first." }, { status: 400 });
       url = await ebStart(process.env, { bank: body.bank, country: body.country!, state, redirect: callback });
-    } else if (id === "basiq") {
-      // One Basiq user per person: a second bank joins the first.
-      const { data } = await createAdminClient().from("plaid_items").select("access_token").eq("user_id", user.id).eq("provider", "basiq").maybeSingle();
-      const known = data?.access_token ? (JSON.parse(data.access_token) as { userId?: string }).userId : null;
-      const s = await basiqStart(process.env, { email: user.email ?? "", state, userId: known });
-      saved.userId = s.userId;
-      url = s.url;
     } else {
       if (!validCpf(body.cpf ?? "") || (body.name ?? "").trim().split(/\s+/).length < 2) return NextResponse.json({ error: "Enter your 11-digit CPF and full name." }, { status: 400 });
       url = await belvoStart(process.env, { cpf: body.cpf!, name: body.name!, origin, callback, state, externalId: `broke-${user.id}` });

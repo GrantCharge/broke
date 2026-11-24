@@ -180,17 +180,6 @@ export async function setupStatus(signedIn: boolean): Promise<SetupStatus> {
     ],
     fields: fields(env, ["ENABLE_BANKING_APP_ID", "ENABLE_BANKING_PRIVATE_KEY"]),
   };
-  const basiqSection: Section = {
-    id: "basiq", kind: "more",
-    title: "Australian banks (Basiq)",
-    what: "People approve on Basiq's own page. The sandbox is free with test banks. Real banks may need accreditation or a partner under Australia's Consumer Data Right, so ask Basiq.",
-    status: isSet(env.BASIQ_API_KEY) ? "done" : "optional",
-    steps: [
-      ["Create an API key at ", { href: "https://dashboard.basiq.io", label: "dashboard.basiq.io" }, "."],
-      [`In Basiq's dashboard, set the return address to http://localhost:3000/api/bank/connect/basiq/callback`],
-    ],
-    fields: fields(env, ["BASIQ_API_KEY"]),
-  };
   const belvoSection: Section = {
     id: "belvo", kind: "more",
     title: "Brazilian banks (Belvo)",
@@ -204,7 +193,7 @@ export async function setupStatus(signedIn: boolean): Promise<SetupStatus> {
   // Installs from before the country question keep a working feed as step 3.
   const saved = isSet(env.BROKE_COUNTRY) ? env.BROKE_COUNTRY! : "";
   const home = saved ? countryOf(saved) : bank?.ok ? countryOf("US") : akahu?.ok ? countryOf("NZ") : null;
-  const feeds = [plaidSection, akahuSection, enableSection, basiqSection, belvoSection];
+  const feeds = [plaidSection, akahuSection, enableSection, belvoSection];
   const homeFeed = feeds.find((f) => f.id === home?.providers[0]);
   const bankStep: Section = !home
     ? { id: "country", kind: "required", title: "Connect banks", what: "Pick where you live. broke shows the banks you can link there.", status: "todo", country: "" }

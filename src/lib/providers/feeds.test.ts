@@ -1,7 +1,7 @@
 // Run: node src/lib/providers/feeds.test.ts
 import assert from "node:assert/strict";
 import { createVerify, generateKeyPairSync } from "node:crypto";
-import { basiqAccount, basiqStart, basiqTxn, belvoAccount, belvoStart, belvoTxn, ebAccount, ebJwt, ebStart, ebTxn, feedData, pemFrom, validCpf } from "./feeds.ts";
+import { belvoAccount, belvoStart, belvoTxn, ebAccount, ebJwt, ebStart, ebTxn, feedData, pemFrom, validCpf } from "./feeds.ts";
 
 const { privateKey, publicKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
 const pem = privateKey.export({ type: "pkcs8", format: "pem" }).toString();
@@ -54,22 +54,6 @@ assert.equal(ebAccount({ uid: "u3", cash_account_type: "SVGS" }, [], "ING").subt
   const r = await feedData("enablebanking", env, JSON.stringify({ accounts: [{ uid: "u", cash_account_type: "CACC" }] }), "2026-01-01T00:00:00Z", f);
   assert.equal(r.txns.length, 2);
   assert.equal(r.accounts[0].current_balance, 10);
-}
-
-// Basiq: outgoing is negative there, positive here; only posted rows.
-assert.equal(basiqTxn({ id: "1", account: "a", postDate: "2026-10-02T00:00:00Z", amount: "-45.10", status: "posted", description: "WOOLWORTHS" })!.amount, 45.1);
-assert.equal(basiqTxn({ id: "2", account: "a", postDate: "2026-10-02", amount: "100.00", status: "posted" })!.amount, -100);
-assert.equal(basiqTxn({ id: "3", account: "a", postDate: null, amount: "-1", status: "pending" }), null);
-assert.deepEqual([basiqAccount({ id: "x", class: { type: "credit-card" }, balance: "-90.00" }).type, basiqAccount({ id: "x", class: { type: "credit-card" }, balance: "-90.00" }).current_balance], ["credit", 90]);
-assert.equal(basiqAccount({ id: "y", class: { type: "transaction" }, balance: "5" }).subtype, "checking");
-{
-  const f = (async (url: string, init?: RequestInit) => {
-    if (String(url).endsWith("/token")) { assert.equal((init!.headers as Record<string, string>).Authorization, "Basic key"); return new Response(JSON.stringify({ access_token: String(init!.body).includes("CLIENT") ? "client" : "server" })); }
-    return new Response(JSON.stringify({ id: "user1" }));
-  }) as typeof fetch;
-  const s = await basiqStart({ BASIQ_API_KEY: "key" }, { email: "a@b.co", state: "st" }, f);
-  assert.equal(s.userId, "user1");
-  assert.equal(s.url, "https://consent.basiq.io/home?token=client&state=st");
 }
 
 // Belvo: always positive, type gives direction; no type is skipped, never guessed.

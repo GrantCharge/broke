@@ -41,7 +41,6 @@ export const ENV_KEYS: Record<string, Spec> = {
   AKAHU_USER_TOKEN: { label: "User Access Token", secret: true, check: (v) => (/^user_token_\w+$/.test(v) ? null : "Starts with user_token_, from my.akahu.nz → Developers") },
   ENABLE_BANKING_APP_ID: { label: "Application ID", secret: false, check: (v) => (/^[\w-]{8,}$/.test(v) ? null : "The application's ID from the Enable Banking control panel") },
   ENABLE_BANKING_PRIVATE_KEY: { label: "Private key (PEM)", secret: true, check: (v) => (/PRIVATE KEY/.test(v) ? null : "Paste the whole key, including BEGIN PRIVATE KEY") },
-  BASIQ_API_KEY: { label: "API key", secret: true, check: (v) => (v.length >= 20 && !/\s/.test(v) ? null : "The key from the Basiq dashboard") },
   BELVO_SECRET_ID: { label: "Secret ID", secret: false, check: (v) => (v.length >= 8 && !/\s/.test(v) ? null : "From Belvo: Developer Tools, API Keys") },
   BELVO_SECRET_PASSWORD: { label: "Secret password", secret: true, check: (v) => (v.length >= 8 ? null : "From Belvo: Developer Tools, API Keys") },
   BELVO_ENV: { label: "Mode", secret: false, check: (v) => (/^(sandbox|production)$/.test(v) ? null : "sandbox or production") },

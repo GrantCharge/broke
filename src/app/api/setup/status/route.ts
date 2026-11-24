@@ -20,6 +20,6 @@ export async function GET() {
   return NextResponse.json({ ...status, sections: status.sections.filter((s) => {
     if (s.kind === "required") return true;
     if (s.id === "akahu") return nz || s.status === "done";
-    return !["plaid", "enablebanking", "basiq", "belvo"].includes(s.id) || here.includes(s.id) || s.status === "done";
+    return !["plaid", "enablebanking", "belvo"].includes(s.id) || here.includes(s.id) || s.status === "done";
   }) });
 }
