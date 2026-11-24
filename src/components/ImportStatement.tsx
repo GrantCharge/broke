@@ -123,7 +123,7 @@ export function ImportStatement({ accounts, locale, currency, link = false, trig
     }
     take(add);
     setFailed((was) => [...was.filter((w) => !list.some((f) => f.name === w.name)), ...bad]);
-    setLocked((was) => [...was, ...lock]);
+    setLocked((was) => [...was, ...lock.filter((f) => !was.some((w) => w.name === f.name))]);
     setBusy(false);
   }
 
