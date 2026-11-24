@@ -6,25 +6,43 @@ import { MonthBars } from "@/components/MonthBars";
 import { PageDates } from "@/components/PageDates";
 import { Merchant } from "@/components/Merchant";
 import { categories, displayName, getUser, isIncome, isSpend, loanPayments, moneyByMonth, savedByMonth, sumOf, today, transactionsSince, type MonthRow, type Txn } from "@/lib/data";
-import { dateLabel, money, money0, monthLabel, monthStart, ymd } from "@/lib/format";
+import { dateLabel, money, money0, monthLabel, monthStart, secondCurrency, ymd } from "@/lib/format";
 
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
 const nextDay = (d: string) => new Date(Date.parse(`${d}T00:00:00Z`) + 864e5).toISOString().slice(0, 10);
 
-type Row = { icon: LucideIcon; label: string; sub: string; v: number };
+// The second currency (Settings): the same rows money_by_month adds up, each converted at its own day's rate
+// (money_rows, migration 0032). Dates are inclusive. Null when no second currency is set or the call fails.
+type Supa = Awaited<ReturnType<typeof getUser>>["supabase"];
+type Row2 = { category_id: string | null; spend: number; income: number };
+async function rows2(supabase: Supa, start: string, end: string): Promise<Row2[] | null> {
+  const cur = secondCurrency();
+  if (!cur) return null;
+  const { data, error } = await supabase.rpc("money_rows", { start_date: start, end_date: end, cur });
+  if (error) return null;
+  return ((data ?? []) as Row2[]).map((r) => ({ category_id: r.category_id, spend: Number(r.spend), income: Number(r.income) }));
+}
+
+// v2: the same amount in the second currency, shown underneath. Left out where it can't be worked out
+// (loan payments and savings are home currency only).
+type Row = { icon: LucideIcon; label: string; sub: string; v: number; v2?: number | null };
 function Summary({ rows }: { rows: Row[] }) {
+  const two = secondCurrency();
   return (
     <div className="space-y-3">
       <div className="section-label px-1">Summary</div>
       <section className="card overflow-hidden">
-        {rows.map(({ icon: Icon, label, sub, v }, i) => (
+        {rows.map(({ icon: Icon, label, sub, v, v2 }, i) => (
           <div key={label} className={`flex items-center gap-4 px-5 py-4 ${i ? "border-t border-line" : ""}`}>
             <Icon size={20} strokeWidth={1.6} className="text-chart" />
             <div className="flex-1">
               <div>{label}</div>
               <div className="text-xs text-muted">{sub}</div>
             </div>
-            <span className="tabular font-medium">{money(v)}</span>
+            <div className="text-right">
+              <span className="block tabular font-medium">{money(v)}</span>
+              {two && v2 != null && <span className="block text-xs text-muted tabular">{money(v2, two)}</span>}
+            </div>
           </div>
         ))}
       </section>
@@ -64,7 +82,7 @@ function IncomeSources({ txns, range }: { txns: Txn[]; range: string }) {
 async function CustomRange({ from, to, today }: { from: string; to: string; today: string }) {
   const { supabase, user } = await getUser();
   const start = from || "2000-01-01", end = to || today;
-  const [txns, cats, savedMonths] = await Promise.all([transactionsSince(start, nextDay(end)), categories(), savedByMonth(supabase, user!.id, start, end)]);
+  const [txns, cats, savedMonths, two] = await Promise.all([transactionsSince(start, nextDay(end)), categories(), savedByMonth(supabase, user!.id, start, end), rows2(supabase, start, end)]);
   const spend = txns.filter(isSpend);
   const total = sumOf(spend, (t) => t.amount);
   const income = -sumOf(txns.filter(isIncome), (t) => t.amount);
@@ -77,6 +95,8 @@ async function CustomRange({ from, to, today }: { from: string; to: string; toda
     return c ? [{ id, label: c.label, color: c.color, icon: c.icon, v, prev: 0 }] : [];
   }).sort((a, b) => b.v - a.v);
   const left = income - total - loans;
+  const total2 = two && sumOf(two, (r) => r.spend), income2 = two && sumOf(two, (r) => r.income);
+  const left2 = two && loans < 1 ? income2! - total2! : null; // loan payments have no second-currency figure
   const label = (d: string) => dateLabel(d, { month: "short", day: "numeric", year: "numeric" });
   return (
     <div className="space-y-6">
@@ -93,10 +113,10 @@ async function CustomRange({ from, to, today }: { from: string; to: string; toda
         <IncomeSources txns={txns} range={`&${new URLSearchParams(Object.entries({ from, to }).filter(([, v]) => v))}`} />
         </div>
         <Summary rows={[
-          { icon: CirclePlus, label: "Income", sub: "Money that came in", v: income },
-          { icon: CircleMinus, label: "Spending", sub: `${spend.length} purchases`, v: total },
+          { icon: CirclePlus, label: "Income", sub: "Money that came in", v: income, v2: income2 },
+          { icon: CircleMinus, label: "Spending", sub: `${spend.length} purchases`, v: total, v2: total2 },
           ...(loans >= 1 ? [{ icon: Landmark, label: "Loan payments", sub: "Paid toward loans", v: loans }] : []),
-          { icon: Scale, label: left >= 0 ? "Left over" : "Spent more than came in", sub: "Income minus everything that went out", v: Math.abs(left) },
+          { icon: Scale, label: left >= 0 ? "Left over" : "Spent more than came in", sub: "Income minus everything that went out", v: Math.abs(left), v2: left2 == null ? null : Math.abs(left2) },
           ...(saved >= 1 ? [{ icon: PiggyBank, label: "Saved and invested", sub: "Into savings and investment accounts", v: saved }] : []),
         ]} />
       </div>
@@ -127,12 +147,14 @@ export default async function Spending({ searchParams }: { searchParams: Promise
   const first = months[0] < prevMonth ? months[0] : prevMonth;
 
   // Totals come from SQL over every own row (migration 0014); only the month's own rows are fetched, for the lists.
-  const [rows, allCats, monthTxns, loans, savedMonths] = await Promise.all([
+  const monthEnd = new Date(monthStart(now, offset + 1).getTime() - 864e5); // money_rows' end date is inclusive
+  const [rows, allCats, monthTxns, loans, savedMonths, two] = await Promise.all([
     moneyByMonth(supabase, ymd(first)),
     categories(),
     transactionsSince(ymd(month), ymd(monthStart(now, offset + 1))),
     loanPayments(supabase, user!.id, ymd(first)),
     savedByMonth(supabase, user!.id, ymd(first)),
+    rows2(supabase, ymd(month), ymd(monthEnd)),
   ]);
   // ponytail: "no transactions in 6 months" is treated as "no bank yet"; split the copy if linked-but-quiet accounts show up.
   if (!rows.length) return <EmptyBank title="See where your money goes" body="Link a bank to get a monthly breakdown by category." />;
@@ -158,7 +180,14 @@ export default async function Spending({ searchParams }: { searchParams: Promise
   const allOut = of(month, (r) => r.spend) + loansIn(month);
   const savedIn = (d: Date) => savedMonths.get(ymd(d).slice(0, 7)) ?? 0;
   const anySaved = months.some((d) => savedIn(d) >= 1);
-  const active = Math.max(1, bars.filter((b) => b.v > 0 || b.income > 0).length); // months before the first data don't drag the average down
+  // The picked month in the second currency, by the same rules as the home-currency lines above.
+  const of2 = (f: (r: Row2) => number, keep: (r: Row2) => boolean = () => true) => (two ? sumOf(two.filter(keep), f) : null);
+  const income2 = of2((r) => r.income);
+  const billTotal2 = of2((r) => r.spend, (r) => isBillCat(r.category_id));
+  const total2 = of2((r) => r.spend, (r) => includeBills || !isBillCat(r.category_id));
+  const allOut2 = of2((r) => r.spend);
+  const left2 = income2 != null && allOut2 != null && loansIn(month) < 1 ? income2 - allOut2 : null; // loan payments have no second-currency figure
+  const active = Math.max(1,bars.filter((b) => b.v > 0 || b.income > 0).length); // months before the first data don't drag the average down
 
   const byCat = new Map<string, { id: string; label: string; color: string; icon: string; v: number; prev: number }>();
   for (const [d, field] of [[month, "v"], [prevMonth, "prev"]] as const) {
@@ -294,11 +323,11 @@ export default async function Spending({ searchParams }: { searchParams: Promise
 
         <div className="space-y-6">
           <Summary rows={[
-            { icon: CirclePlus, label: "Income", sub: vs(income, prevIncome), v: income },
-            { icon: ReceiptText, label: "Bills", sub: vs(billTotal, prevBills), v: billTotal },
-            { icon: CircleMinus, label: "Spending", sub: vs(total, prevTotal), v: total },
+            { icon: CirclePlus, label: "Income", sub: vs(income, prevIncome), v: income, v2: income2 },
+            { icon: ReceiptText, label: "Bills", sub: vs(billTotal, prevBills), v: billTotal, v2: billTotal2 },
+            { icon: CircleMinus, label: "Spending", sub: vs(total, prevTotal), v: total, v2: total2 },
             ...(loansIn(month) >= 1 || loansIn(prevMonth) >= 1 ? [{ icon: Landmark, label: "Loan payments", sub: vs(loansIn(month), loansIn(prevMonth)), v: loansIn(month) }] : []),
-            { icon: Scale, label: income - allOut >= 0 ? "Left over" : "Spent more than came in", sub: "Income minus everything that went out", v: Math.abs(income - allOut) },
+            { icon: Scale, label: income - allOut >= 0 ? "Left over" : "Spent more than came in", sub: "Income minus everything that went out", v: Math.abs(income - allOut), v2: left2 == null ? null : Math.abs(left2) },
             ...(savedIn(month) >= 1 || savedIn(prevMonth) >= 1 ? [{ icon: PiggyBank, label: "Saved and invested", sub: vs(savedIn(month), savedIn(prevMonth)), v: savedIn(month) }] : []),
           ]} />
 
